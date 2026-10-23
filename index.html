@@ -1,0 +1,490 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FriendChat</title>
+
+<style>
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #f0f3fa;
+  color: #202b45;
+}
+
+header {
+  background: #263b80;
+  color: white;
+  padding: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+header h2 { margin: 0; }
+
+main {
+  max-width: 800px;
+  margin: 24px auto;
+  padding: 12px;
+}
+
+.panel {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 15px;
+  box-shadow: 0 4px 15px #0000000d;
+}
+
+input, textarea, select {
+  width: 100%;
+  padding: 12px;
+  margin: 8px 0;
+  border: 1px solid #d4dbea;
+  border-radius: 8px;
+  font-size: 15px;
+}
+
+button {
+  border: none;
+  border-radius: 8px;
+  padding: 10px 14px;
+  background: #3558c7;
+  color: white;
+  cursor: pointer;
+  margin: 4px 2px;
+}
+
+nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 15px;
+}
+
+.item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  background: #f5f7fc;
+  border-radius: 8px;
+  margin: 8px 0;
+  overflow-wrap: anywhere;
+}
+
+.messages {
+  height: 300px;
+  overflow-y: auto;
+  background: #f5f7fc;
+  padding: 12px;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.bubble {
+  background: #e1e8fa;
+  padding: 10px;
+  border-radius: 10px;
+  max-width: 80%;
+  align-self: flex-start;
+  overflow-wrap: anywhere;
+}
+
+.bubble.mine {
+  background: #d7f4e2;
+  align-self: flex-end;
+}
+
+#authMsg { color: #c62828; }
+
+[hidden] { display: none !important; }
+
+@media(max-width: 600px) {
+  main { margin: 10px auto; }
+  .panel { padding: 14px; }
+}
+</style>
+</head>
+
+<body>
+<header>
+  <h2>💬 FriendChat</h2>
+  <span id="who">Guest</span>
+</header>
+
+<main>
+<section id="auth" class="panel">
+  <h2>Create your account</h2>
+  <input id="username" placeholder="Choose a username">
+  <button id="signup">Register / Sign In</button>
+  <p id="authMsg"></p>
+  <p><small>Demo version: accounts are stored in this browser only.</small></p>
+</section>
+
+<section id="app" hidden>
+  <nav>
+    <button data-view="friendsView">Friends</button>
+    <button data-view="chatView">Messages</button>
+    <button data-view="statusView">Statuses</button>
+  </nav>
+
+  <section id="friendsView" class="panel view">
+    <h2>Find Friends</h2>
+    <input id="search" placeholder="Search registered usernames">
+    <button id="searchBtn">Search</button>
+    <div id="searchResults"></div>
+
+    <h3>Friend Requests</h3>
+    <div id="requests"></div>
+
+    <h3>My Friends</h3>
+    <div id="friends"></div>
+  </section>
+
+  <section id="chatView" class="panel view" hidden>
+    <h2>Messages</h2>
+    <select id="friendSelect">
+      <option value="">Choose a friend</option>
+    </select>
+    <button id="openChat">Open Chat</button>
+    <div id="messages" class="messages"></div>
+
+    <form id="sendForm">
+      <input id="messageText" placeholder="Write a message..." required>
+      <button>Send</button>
+    </form>
+  </section>
+
+  <section id="statusView" class="panel view" hidden>
+    <h2>Post a Status</h2>
+    <form id="statusForm">
+      <textarea id="statusText" maxlength="280"
+        placeholder="What's happening?" required></textarea>
+      <button>Post Status</button>
+    </form>
+    <div id="statuses"></div>
+  </section>
+
+  <button id="logout">Sign Out</button>
+</section>
+</main>
+
+<script>
+// LOCAL DEMO ONLY — no server and no Firebase.
+
+const $ = id => document.getElementById(id);
+
+let currentUser = null;
+let activeFriend = null;
+
+function read(key, fallback = []) {
+  try {
+    return JSON.parse(localStorage.getItem(key)) ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function save(key, value) {
+  localStorage.setItem(key, JSON.stringify(value));
+}
+
+function usernameKey(value) {
+  return value.trim().toLowerCase().replace(/^@/, "");
+}
+
+function show(id, text) {
+  $(id).textContent = text;
+}
+
+function key(a, b) {
+  return [a, b].sort().join("::");
+}
+
+function switchView(id) {
+  document.querySelectorAll(".view").forEach(view => {
+    view.hidden = view.id !== id;
+  });
+}
+
+document.querySelectorAll("nav button").forEach(button => {
+  button.onclick = () => switchView(button.dataset.view);
+});
+
+// REGISTER OR SIGN IN LOCALLY
+$("signup").onclick = () => {
+  const username = usernameKey($("username").value);
+
+  if (!/^[a-z0-9_.-]{3,24}$/.test(username)) {
+    return show("authMsg", "Enter a username with 3–24 valid characters.");
+  }
+
+  const users = read("fc_users");
+
+  if (!users.includes(username)) {
+    users.push(username);
+    save("fc_users", users);
+  }
+
+  currentUser = username;
+  localStorage.setItem("fc_current", username);
+  startApp();
+};
+
+function startApp() {
+  $("auth").hidden = true;
+  $("app").hidden = false;
+  show("who", "@" + currentUser);
+  refreshFriends();
+  renderStatuses();
+}
+
+$("logout").onclick = () => {
+  currentUser = null;
+  activeFriend = null;
+  localStorage.removeItem("fc_current");
+  $("auth").hidden = false;
+  $("app").hidden = true;
+  show("who", "Guest");
+};
+
+// SEARCH USERS
+$("searchBtn").onclick = () => {
+  const term = usernameKey($("search").value);
+  const results = $("searchResults");
+  results.replaceChildren();
+
+  const users = read("fc_users").filter(name =>
+    name.includes(term) && name !== currentUser
+  );
+
+  if (!term || users.length === 0) {
+    results.textContent = "No matching users found in this browser.";
+    return;
+  }
+
+  users.forEach(name => {
+    const row = document.createElement("div");
+    row.className = "item";
+
+    const label = document.createElement("span");
+    label.textContent = "@" + name;
+
+    const button = document.createElement("button");
+    button.textContent = "Add Friend";
+
+    button.onclick = () => {
+      const requests = read("fc_requests");
+      const exists = requests.some(r =>
+        r.from === currentUser &&
+        r.to === name &&
+        r.status === "pending"
+      );
+
+      if (!exists) {
+        requests.push({
+          from: currentUser,
+          to: name,
+          status: "pending"
+        });
+        save("fc_requests", requests);
+      }
+
+      button.textContent = "Request Sent";
+      button.disabled = true;
+    };
+
+    row.append(label, button);
+    results.append(row);
+  });
+};
+
+// FRIEND REQUESTS
+function refreshFriends() {
+  const friends = read("fc_friends");
+  const mine = friends.filter(pair => pair.includes(currentUser))
+    .map(pair => pair.find(name => name !== currentUser));
+
+  $("friends").replaceChildren();
+  $("friendSelect").replaceChildren(
+    new Option("Choose a friend", "")
+  );
+
+  mine.forEach(name => {
+    $("friendSelect").add(new Option("@" + name, name));
+
+    const row = document.createElement("div");
+    row.className = "item";
+
+    const label = document.createElement("span");
+    label.textContent = "@" + name;
+
+    const button = document.createElement("button");
+    button.textContent = "Message";
+    button.onclick = () => {
+      $("friendSelect").value = name;
+      switchView("chatView");
+      openChat();
+    };
+
+    row.append(label, button);
+    $("friends").append(row);
+  });
+
+  if (!mine.length) {
+    $("friends").textContent = "No friends added yet.";
+  }
+
+  const list = $("requests");
+  list.replaceChildren();
+
+  read("fc_requests").forEach((request, index) => {
+    if (request.to !== currentUser ||
+        request.status !== "pending") return;
+
+    const row = document.createElement("div");
+    row.className = "item";
+
+    const label = document.createElement("span");
+    label.textContent = "@" + request.from;
+
+    const button = document.createElement("button");
+    button.textContent = "Accept";
+
+    button.onclick = () => {
+      const requests = read("fc_requests");
+      requests[index].status = "accepted";
+      save("fc_requests", requests);
+
+      const allFriends = read("fc_friends");
+      const pair = [request.from, request.to].sort();
+
+      if (!allFriends.some(p => key(...p) === key(...pair))) {
+        allFriends.push(pair);
+      }
+
+      save("fc_friends", allFriends);
+      refreshFriends();
+    };
+
+    row.append(label, button);
+    list.append(row);
+  });
+
+  if (!list.children.length) {
+    list.textContent = "No pending friend requests.";
+  }
+}
+
+// LOCAL MESSAGING
+function openChat() {
+  activeFriend = $("friendSelect").value;
+  renderMessages();
+}
+
+$("openChat").onclick = openChat;
+
+function renderMessages() {
+  const area = $("messages");
+  area.replaceChildren();
+
+  if (!activeFriend) return;
+
+  const chatKey = "fc_chat_" + key(currentUser, activeFriend);
+
+  read(chatKey).forEach(item => {
+    const bubble = document.createElement("div");
+    bubble.className = "bubble" +
+      (item.from === currentUser ? " mine" : "");
+
+    bubble.textContent = item.from + ": " + item.text;
+    area.append(bubble);
+  });
+
+  area.scrollTop = area.scrollHeight;
+}
+
+$("sendForm").onsubmit = event => {
+  event.preventDefault();
+
+  const text = $("messageText").value.trim();
+  if (!text || !activeFriend) return;
+
+  const chatKey = "fc_chat_" + key(currentUser, activeFriend);
+  const messages = read(chatKey);
+
+  messages.push({
+    from: currentUser,
+    text,
+    time: Date.now()
+  });
+
+  save(chatKey, messages);
+  $("messageText").value = "";
+  renderMessages();
+};
+
+// LOCAL STATUS POSTS
+$("statusForm").onsubmit = event => {
+  event.preventDefault();
+
+  const text = $("statusText").value.trim();
+  if (!text) return;
+
+  const statuses = read("fc_statuses");
+
+  statuses.unshift({
+    from: currentUser,
+    text,
+    time: Date.now()
+  });
+
+  save("fc_statuses", statuses.slice(0, 100));
+  $("statusText").value = "";
+  renderStatuses();
+};
+
+function renderStatuses() {
+  const area = $("statuses");
+  area.replaceChildren();
+
+  read("fc_statuses").forEach(status => {
+    const row = document.createElement("div");
+    row.className = "item";
+
+    const content = document.createElement("div");
+    const title = document.createElement("strong");
+    const text = document.createElement("p");
+
+    title.textContent = "@" + status.from;
+    text.textContent = status.text;
+
+    content.append(title, text);
+    row.append(content);
+    area.append(row);
+  });
+
+  if (!area.children.length) {
+    area.textContent = "No statuses yet.";
+  }
+}
+
+// RESTORE CURRENT DEMO SESSION
+const previousUser = localStorage.getItem("fc_current");
+
+if (previousUser && read("fc_users").includes(previousUser)) {
+  currentUser = previousUser;
+  startApp();
+}
+</script>
+</body>
+</html>
